@@ -16,8 +16,43 @@ const s3 = new AWS.S3({
     s3BucketEndpoint: true,
 });
 
-console.log("begin zip");
-zip(__dirname + "/" + 'data', __dirname + "/" + zipName)
+
+console.log("get current items begin");
+new Promise(function(resolve, reject) {
+    s3.listObjects({Bucket: process.env.S3_BUCKET}, (err, res) => {
+        if (err) reject(err);
+        resolve(res.Contents.map(i => i));
+    });
+})
+    .then(items => {
+        console.log("get current items success");
+
+        const tenDaysLeft = moment().subtract(
+            process.env.DAYS_LEFT ? Number(process.env.DAYS_LEFT) : 10,
+            "days"
+        ).format("YYYY-MM-DD");
+
+        const toRemove = items.filter(item => item.Key < tenDaysLeft);
+
+        console.log("Remove backups: " + toRemove.map(i => i.Key).join(", "));
+
+        return new Promise((resolve, reject) => {
+            s3.deleteObjects({
+                Bucket: process.env.S3_BUCKET,
+                Delete: {
+                    Objects: toRemove.map(i => ({ Key: i.Key }))
+                }
+            }, (err, res) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+    })
+    .then(() => {
+        console.log("remove backups success");
+        console.log("begin zip");
+      return zip(__dirname + "/" + 'data', __dirname + "/" + zipName);
+    })
     .then(r => {
         console.log("success zip");
 
